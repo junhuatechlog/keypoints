@@ -1,27 +1,27 @@
 Reset Safe Ram Disk
 ----
 rpram: reset safe ram disk
-
+```c
     /src-rfs/src/rootfs/systemd/rpram.service   
     ExecStart=/etc/init.d/ramdisk
-
+```
 phram MTD devices
-
+```c
 dev_nvrd_name="/dev/nvrd"
 
 fsck_logfile="/fsck.nvrd.log"
 
 fsck_ret_value="/fsck.ret"
-
+```
 ```shell
 # do the check in a subshell and store the return value in a file
 ( fsck.ext4 -y -f $dev_nvrd_name &> $fsck_logfile; echo $? > ${fsck_ret_value}; ) &
 fsck_pid=$!
 ```
-
+```c
 mount -o bind /nvrd/log /var/log
 mount -o bind /nvrd/tmp /var/tmp
-
+```
 
 ext4 usese hash table tree(HTREE) for directory organization and the extents organization.
 Check if hash tree enabled:
@@ -92,11 +92,12 @@ Restarting e2fsck from the beginning...
 One or more block group descriptor checksums are invalid.  Fix? yes
 
 #### hwapi log:
-
+```c
 Line 2486: 51000 002486 18.08 20:55:29.864502956  [192.168.129.2]  17 P-1111-0-HWRRese <2016-08-18T11:43:24.742445Z> DE0-RSTMain INF/HWA/RESET, ApiResetRpramSet: Writing 0x10110930 : to /var/tmp/hwapi/RP_RAM_hdbde_test_mode.txt
+```
 
 Pass 2: Checking directory structure
-Entry 'test1233.log' in /tmp/hwapi (66) has deleted/unused inode 52.  Clear? yes
+Entry `test1233.log` in /tmp/hwapi (66) has deleted/unused inode 52.  Clear? yes
 
 http://man7.org/linux/man-pages/man5/ext4.5.html
 
@@ -142,8 +143,9 @@ https://en.wikipedia.org/wiki/Ext3#Journaling_levels
                      appear in files after a crash and journal recovery.
 
 ---------------------------------------
+```c
 mount -t ext4 -o sync,rw,noatime,exec,data=writeback $dev_nvrd $nvrd_mp
-
+```
 mount options:
 
     sync   All I/O to the filesystem should be done synchronously. In case of media with limited number of write cycles (e.g. some flash  drives)  "sync"  may  cause life-cycle shortening.
@@ -186,4 +188,4 @@ fdatasync与fsync的区别在于fdatasync不会flush文件的metadata信息。�
 If the underlying hard disk has write caching enabled , then the data may not really be on permanent storage when fsync() / fdatasync() return(4.3BSD, POSIX.1-2001).
 但是在我的linux系统man里，没有发现这句话。 
 
-总的说， fflush()只是将流刷出application到OS，不一定到disk, fsync()将特定文件(fd)刷到disk，sync()就是刷所有文件了。 
+总的来说， fflush()只是将流刷出application到OS，不一定到disk, fsync()将特定文件(fd)刷到disk，sync()就是刷所有文件了。 
