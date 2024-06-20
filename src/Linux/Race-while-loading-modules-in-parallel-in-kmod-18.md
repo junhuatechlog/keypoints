@@ -1,14 +1,15 @@
 Race condition while loading modules in parallel in kmod-18
 ----------------------
-1. [Triger the bug method](#triger-the-bug-method)
-1. [Function call procedure when calling 'modprobe'](#function-call-procedure-when-calling-modprobe)
-1. [kmod_module_get_initstate() in kmod-18](#kmod_module_get_initstate-in-kmod-18)
-1. [kmod_module_get_initstate() in kmod-20 - Correction](#kmod_module_get_initstate-in-kmod-20-correction)
-1. [Where the process blocked if the module being mounted in parallel](#where-the-process-blocked-if-the-module-being-mounted-in-parallel)
-1. [Module state definition](#module-state-definition)
-1. [Function call procedure comparision between kmod-18 and kmod-20](#function-call-procedure-comparision)
-1. [Debug print and patch to check where the processes are blocked](#debug-print-and-patch-to-check-where-the-processes-are-blocked)
-1. [finit_module() function](#finit_module-function)
+- [Race condition while loading modules in parallel in kmod-18](#race-condition-while-loading-modules-in-parallel-in-kmod-18)
+- [Triger the bug method](#triger-the-bug-method)
+- [Function call procedure when calling 'modprobe'](#function-call-procedure-when-calling-modprobe)
+- [kmod\_module\_get\_initstate() in kmod-18](#kmod_module_get_initstate-in-kmod-18)
+- [kmod\_module\_get\_initstate() in kmod-20 - Correction](#kmod_module_get_initstate-in-kmod-20---correction)
+- [Where the process blocked if module being mounted in parallel](#where-the-process-blocked-if-module-being-mounted-in-parallel)
+  - [Module state definition](#module-state-definition)
+  - [Function call procedure comparision](#function-call-procedure-comparision)
+  - [Debug print and patch to check where the processes are blocked](#debug-print-and-patch-to-check-where-the-processes-are-blocked)
+  - [finit\_module() function](#finit_module-function)
 
 
 ## Triger the bug method
@@ -102,10 +103,9 @@ static struct module_attribute modinfo_initstate =
     __ATTR(initstate, 0444, show_initstate, NULL);
 ```
 
-From above analysis, */sys/module/\<module name\>* and
-  */sys/module/\<module name\>/initstate* creations are not atomic. There's a small window in
-  which the directory exists but the initstate file was still not
-  created.
+From above analysis, **/sys/module/\<module name\>** and
+  **/sys/module/\<module name\>/initstate** creations are not atomic. There's a small window in
+  which the directory exists but the initstate file was still not created.
 
 **This window cause the kmod modprobe logic error when check the module init state.**
 
@@ -269,13 +269,13 @@ KMOD_EXPORT int kmod_module_get_initstate(const struct kmod_module *mod)
 }
 ```
 
-[Race condition while loading modules in parallel in kmod-18 patch](../assets/linux/0001-Fix-race-while-loading-modules.patch)
+[Race condition while loading modules in parallel in kmod-18 patch](m314/linux/0001-Fix-race-while-loading-modules.patch)
 
 [kmod source code commit of the patch](https://github.com/lucasdemarchi/kmod/commit/fd44a98ae2eb5eb32161088954ab21e58e19dfc4)
 
 ## Where the process blocked if module being mounted in parallel
 
-If 3 threads call socket(AF_NETLINK, SOCK_RAW, NETLINK_XFRM); in parallel,
+If 3 threads call **socket(AF_NETLINK, SOCK_RAW, NETLINK_XFRM)**; in parallel,
 which will trigger 3 modprobe processes start to load kernel module xfrm_user.ko.
 Only 1 unique process will load the module, other 2 processes should be blocked.
 **Where the other 2 processes blocked?**
@@ -286,9 +286,8 @@ then load modules one by one according the dependency list by finit_module() sys
 It call finit_module() systemcall to load kernel modules.
 --> 
 int load_module(struct load_info *info, const char __user *uargs, int flags)
-
-static int load_module(struct load_info *info, const char __user *uargs,
-               int flags)
+```c
+static int load_module(struct load_info *info, const char __user *uargs, int flags)
 {
     struct module *mod;
     long err;
@@ -328,8 +327,9 @@ static int load_module(struct load_info *info, const char __user *uargs,
     return do_init_module(mod);
 ...
 }
+```
 
-In the add_unformed_module(mod), it will check if the module already installed. 
+In the `add_unformed_module(mod)`, it will check if the module already installed. 
 
 ```c
 /*
@@ -392,15 +392,15 @@ enum module_state {
 ### Function call procedure comparision
 
 When the problem happens in kmod-18, the function call procedure is different to the procedure in kmod-20.
-Take sockettest as an example, 3 threads will be created to call socket(),
+Take `sockettest` as an example, 3 threads will be created to call socket(),
 which triggers 3 processes to install xfrm_user.ko module in parallel!
 
-![image](../images/m314/socket-test-procedure.png)
-![image](../images/m314/3-modprobe-compare-m314.png)
+![image](m314/images/socket-test-procedure.png)
+![image](m314/images/3-modprobe-compare-m314.png)
 
 ### Debug print and patch to check where the processes are blocked
 
-[Debug print patch](../test_tools/0001-debug-where-the-modprobe-block-if-multiple-processes-modprobe-same-module.patch)
+[Debug print patch](m314/linux/0001-debug-where-the-modprobe-block-if-multiple-processes-modprobe-same-module.patch)
 
 Because of the dependencies, install xfrm_usr.ko will install xfrm_algo.ko first, then xfrm_usr.ko.
 Debug logs:

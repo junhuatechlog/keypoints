@@ -1,0 +1,241 @@
+From fd44a98ae2eb5eb32161088954ab21e58e19dfc4 Mon Sep 17 00:00:00 2001
+From: Harish Jenny K N <harish_kandiga@mentor.com>
+Date: Sun, 22 Feb 2015 15:41:07 -0300
+Subject: [PATCH] Fix race while loading modules
+
+usecase: two sd cards are being mounted in parallel at same time on
+dual core. example modules which are getting loaded is nls_cp437.
+While one module is being loaded , it starts creating sysfs files.
+meanwhile on other core, modprobe might return saying the module
+is KMOD_MODULE_BUILTIN, which might result in not mounting sd card.
+
+Experiments done to prove the issue in kmod.
+Added sleep in kernel module.c at the place of creation of sysfs files.
+Then tried `modprobe nls_cp437` from two different shells.
+While the first was still waiting for its completion ,
+the second one returned saying the module is built-in.
+
+[ Lucas:
+
+  The problem is that the creation of /sys/module/<name> and
+  /sys/module/<name>/initstate are not atomic. There's a small window in
+  which the directory exists but the initstate file was still not
+  created.
+
+  Built-in modules can be handled by searching the modules.builtin file.
+  We actually lose some "modules" that create entries in /sys/modules
+  (e.g. vt) and are not in modules.builtin file: only those that can be
+  compiled as module are present in this file.
+
+  We enforce mod->builtin to always be up-to-date when
+  kmod_module_get_initstate() is called. This way if the directory
+  exists but the initstate doesn't, we can be sure this is because the
+  module is in the "coming" state, i.e. kernel didn't create the file
+  yet, but since builtin modules were already handled by checking our
+  index the only reason for that to happen is that we hit the race
+  condition.
+
+  I also added some tweaks to the patch, so we don't repeat the code for builtin
+  lookup.  ]
+---
+ libkmod/libkmod-internal.h |  3 ++-
+ libkmod/libkmod-module.c   | 40 +++++++++++++++++++++++++++++-----------
+ libkmod/libkmod.c          | 33 ++++++++++++++++++++++++++-------
+ 3 files changed, 57 insertions(+), 19 deletions(-)
+
+diff --git a/libkmod/libkmod-internal.h b/libkmod/libkmod-internal.h
+index 417f232..3e9839d 100644
+--- a/libkmod/libkmod-internal.h
++++ b/libkmod/libkmod-internal.h
+@@ -92,6 +92,7 @@ int kmod_lookup_alias_from_symbols_file(struct kmod_ctx *ctx, const char *name,
+ int kmod_lookup_alias_from_aliases_file(struct kmod_ctx *ctx, const char *name, struct kmod_list **list) __attribute__((nonnull(1, 2, 3)));
+ int kmod_lookup_alias_from_moddep_file(struct kmod_ctx *ctx, const char *name, struct kmod_list **list) __attribute__((nonnull(1, 2, 3)));
+ int kmod_lookup_alias_from_builtin_file(struct kmod_ctx *ctx, const char *name, struct kmod_list **list) __attribute__((nonnull(1, 2, 3)));
++bool kmod_lookup_alias_is_builtin(struct kmod_ctx *ctx, const char *name) __attribute__((nonnull(1, 2)));
+ int kmod_lookup_alias_from_commands(struct kmod_ctx *ctx, const char *name, struct kmod_list **list) __attribute__((nonnull(1, 2, 3)));
+ void kmod_set_modules_visited(struct kmod_ctx *ctx, bool visited) __attribute__((nonnull((1))));
+ void kmod_set_modules_required(struct kmod_ctx *ctx, bool required) __attribute__((nonnull((1))));
+@@ -145,7 +146,7 @@ void kmod_module_set_remove_commands(struct kmod_module *mod, const char *cmd) _
+ void kmod_module_set_visited(struct kmod_module *mod, bool visited) __attribute__((nonnull(1)));
+ void kmod_module_set_builtin(struct kmod_module *mod, bool builtin) __attribute__((nonnull((1))));
+ void kmod_module_set_required(struct kmod_module *mod, bool required) __attribute__((nonnull(1)));
+-
++bool kmod_module_is_builtin(struct kmod_module *mod) __attribute__((nonnull(1)));
+ 
+ /* libkmod-file.c */
+ struct kmod_file *kmod_file_open(const struct kmod_ctx *ctx, const char *filename) _must_check_ __attribute__((nonnull(1,2)));
+diff --git a/libkmod/libkmod-module.c b/libkmod/libkmod-module.c
+index 30f15ca..366308f 100644
+--- a/libkmod/libkmod-module.c
++++ b/libkmod/libkmod-module.c
+@@ -49,6 +49,12 @@
+  * @short_description: operate on kernel modules
+  */
+ 
++enum kmod_module_builtin {
++    KMOD_MODULE_BUILTIN_UNKNOWN,
++    KMOD_MODULE_BUILTIN_NO,
++    KMOD_MODULE_BUILTIN_YES,
++};
++
+ /**
+  * kmod_module:
+  *
+@@ -75,6 +81,13 @@ struct kmod_module {
+ 	} init;
+ 
+ 	/*
++	 * mark if module is builtin, i.e. it's present on modules.builtin
++	 * file. This is set as soon as it is needed or as soon as we know
++	 * about it, i.e. the module was created from builtin lookup.
++	 */
++	enum kmod_module_builtin builtin;
++
++	/*
+ 	 * private field used by kmod_module_get_probe_list() to detect
+ 	 * dependency loops
+ 	 */
+@@ -92,13 +105,6 @@ struct kmod_module {
+ 	 * is a softdep only
+ 	 */
+ 	bool required : 1;
+-
+-	/*
+-	 * if module was created by searching the modules.builtin file, this
+-	 * is set. There's nothing much useful one can do with such a
+-	 * "module", except knowing it's builtin.
+-	 */
+-	bool builtin : 1;
+ };
+ 
+ static inline const char *path_join(const char *path, size_t prefixlen,
+@@ -212,7 +218,8 @@ void kmod_module_set_visited(struct kmod_module *mod, bool visited)
+ 
+ void kmod_module_set_builtin(struct kmod_module *mod, bool builtin)
+ {
+-	mod->builtin = builtin;
++	mod->builtin =
++		builtin ? KMOD_MODULE_BUILTIN_YES : KMOD_MODULE_BUILTIN_NO;
+ }
+ 
+ void kmod_module_set_required(struct kmod_module *mod, bool required)
+@@ -220,6 +227,15 @@ void kmod_module_set_required(struct kmod_module *mod, bool required)
+ 	mod->required = required;
+ }
+ 
++bool kmod_module_is_builtin(struct kmod_module *mod)
++{
++	if (mod->builtin == KMOD_MODULE_BUILTIN_UNKNOWN) {
++		kmod_module_set_builtin(mod,
++					kmod_lookup_alias_is_builtin(mod->ctx, mod->name));
++	}
++
++	return mod->builtin == KMOD_MODULE_BUILTIN_YES;
++}
+ /*
+  * Memory layout with alias:
+  *
+@@ -924,7 +940,8 @@ KMOD_EXPORT int kmod_module_apply_filter(const struct kmod_ctx *ctx,
+ 				module_is_blacklisted(mod))
+ 			continue;
+ 
+-		if ((filter_type & KMOD_FILTER_BUILTIN) && mod->builtin)
++		if ((filter_type & KMOD_FILTER_BUILTIN)
++		    && kmod_module_is_builtin(mod))
+ 			continue;
+ 
+ 		node = kmod_list_append(*output, mod);
+@@ -1713,7 +1730,8 @@ KMOD_EXPORT int kmod_module_get_initstate(const struct kmod_module *mod)
+ 	if (mod == NULL)
+ 		return -ENOENT;
+ 
+-	if (mod->builtin)
++	/* remove const: this can only change internal state */
++	if (kmod_module_is_builtin((struct kmod_module *)mod))
+ 		return KMOD_MODULE_BUILTIN;
+ 
+ 	pathlen = snprintf(path, sizeof(path),
+@@ -1729,7 +1747,7 @@ KMOD_EXPORT int kmod_module_get_initstate(const struct kmod_module *mod)
+ 			struct stat st;
+ 			path[pathlen - (sizeof("/initstate") - 1)] = '\0';
+ 			if (stat(path, &st) == 0 && S_ISDIR(st.st_mode))
+-				return KMOD_MODULE_BUILTIN;
++				return KMOD_MODULE_COMING;
+ 		}
+ 
+ 		DBG(mod->ctx, "could not open '%s': %s\n",
+diff --git a/libkmod/libkmod.c b/libkmod/libkmod.c
+index 1a5a66b..643fd38 100644
+--- a/libkmod/libkmod.c
++++ b/libkmod/libkmod.c
+@@ -483,13 +483,9 @@ int kmod_lookup_alias_from_aliases_file(struct kmod_ctx *ctx, const char *name,
+ 								name, list);
+ }
+ 
+-int kmod_lookup_alias_from_builtin_file(struct kmod_ctx *ctx, const char *name,
+-						struct kmod_list **list)
++static char *lookup_builtin_file(struct kmod_ctx *ctx, const char *name)
+ {
+-	char *line = NULL;
+-	int err = 0;
+-
+-	assert(*list == NULL);
++	char *line;
+ 
+ 	if (ctx->indexes[KMOD_INDEX_MODULES_BUILTIN]) {
+ 		DBG(ctx, "use mmaped index '%s' modname=%s\n",
+@@ -508,13 +504,25 @@ int kmod_lookup_alias_from_builtin_file(struct kmod_ctx *ctx, const char *name,
+ 		idx = index_file_open(fn);
+ 		if (idx == NULL) {
+ 			DBG(ctx, "could not open builtin file '%s'\n", fn);
+-			goto finish;
++			return NULL;
+ 		}
+ 
+ 		line = index_search(idx, name);
+ 		index_file_close(idx);
+ 	}
+ 
++	return line;
++}
++
++int kmod_lookup_alias_from_builtin_file(struct kmod_ctx *ctx, const char *name,
++						struct kmod_list **list)
++{
++	char *line;
++	int err = 0;
++
++	assert(*list == NULL);
++
++	line = lookup_builtin_file(ctx, name);
+ 	if (line != NULL) {
+ 		struct kmod_module *mod;
+ 
+@@ -525,6 +533,8 @@ int kmod_lookup_alias_from_builtin_file(struct kmod_ctx *ctx, const char *name,
+ 			goto finish;
+ 		}
+ 
++		/* already mark it as builtin since it's being created from
++		 * this index */
+ 		kmod_module_set_builtin(mod, true);
+ 		*list = kmod_list_append(*list, mod);
+ 		if (*list == NULL)
+@@ -536,6 +546,15 @@ finish:
+ 	return err;
+ }
+ 
++bool kmod_lookup_alias_is_builtin(struct kmod_ctx *ctx, const char *name)
++{
++	_cleanup_free_ char *line;
++
++	line = lookup_builtin_file(ctx, name);
++
++	return line != NULL;
++}
++
+ char *kmod_search_moddep(struct kmod_ctx *ctx, const char *name)
+ {
+ 	struct index_file *idx;
+-- 
+1.8.3.1
+
