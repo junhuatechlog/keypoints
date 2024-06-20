@@ -18,9 +18,9 @@ Race condition while loading modules in parallel in kmod-18
 
 ## Function call procedure when calling 'modprobe'
 
-Command 'modprobe xfrm_user.ko' will call system call finit_module().
+Command `modprobe xfrm_user.ko` will call system call finit_module().
 
-systemcall finit_module() in kernel/module.c
+systemcall finit_module() in `kernel/module.c`
 
 --> 
 int load_module(struct load_info *info, const char __user *uargs, int flags)
@@ -78,10 +78,10 @@ static int mod_sysfs_setup(struct module *mod,
     return 0;
 ```
 **mod_sysfs_init(mod)** will add the xfrm_user to the kobject link table, 
-means create the directory */sys/modules/xfrm_user*.
+means create the directory **/sys/modules/xfrm_user**.
 
 **module_param_sysfs_setup(mod, kparam, num_params);** will create module's specific parameters 
-in */sys/modules/xfrm_user/parameters/* directory.
+in **/sys/modules/xfrm_user/parameters/** directory.
 
 **module_add_modinfo_attrs(mod);** will create uniform attributes for every kernel module. 
 
@@ -138,7 +138,7 @@ KMOD_EXPORT int kmod_module_get_initstate(const struct kmod_module *mod)
         return err;
     }
 ```
-**If the /sys/module/xfrm_user/initstate haven't created, but /sys/module/xfrm_user/ already there,
+**If the `/sys/module/xfrm_user/initstate` haven't created, but `/sys/module/xfrm_user/` already there,
 It will return KMOD_MODULE_BUILTIN; which means the kernel module are built in the kernel, 
 which actually is not ready.**
 
@@ -146,7 +146,7 @@ which actually is not ready.**
 ## kmod_module_get_initstate() in kmod-20 - Correction
 
 To check if the modules are builtin, to check the /lib/modules/`uname -r`/modules.builtin
-file instead of /sys/module/\<module name\>, 
+file instead of `/sys/module/\<module name\>`, 
 The modules.builtin file are created when kernel compilation in SCM phase.
 
 ```c
@@ -404,7 +404,7 @@ which triggers 3 processes to install xfrm_user.ko module in parallel!
 
 Because of the dependencies, install xfrm_usr.ko will install xfrm_algo.ko first, then xfrm_usr.ko.
 Debug logs:
-
+```c
     [   53.806738] IPv6: ADDRCONF(NETDEV_CHANGE): xaui2: link becomes ready
     [   69.516325] vrha: vrha_set_polling_mode : (ACTIVE)
     [   84.373189] finit_module: 2840, modprobe
@@ -430,12 +430,12 @@ Debug logs:
     [   84.374659] Initializing XFRM netlink socket
     [   84.374704] mod xfrm_user already exist! 2843, modprobe
     [   84.374791] mod xfrm_user already exist! 2840, modprobe
-
+```
 ### finit_module() function 
-
+```c
     int finit_module(int fd, const char *param_values,
                             int flags);
-
+```
 
 Reads the module to be loaded from the file descriptor fd into kernel space, performs any necessary symbol relocations, 
 then, check if the module already installed, setup sysfs directory for the module, initializes module parameters to values provided by the caller,
