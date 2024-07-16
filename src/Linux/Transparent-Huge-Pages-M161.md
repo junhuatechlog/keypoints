@@ -4,7 +4,7 @@ Transparent Huge Page support
 Transport team have a Mansho that IPsec process(charon which have 520 threads) will be killed because of OOM(out of memory) after startup soon. 
 Root cause is it accupy 1G bytes abnormally, while 100 Mbytes normally. 
 From /proc/`pid of charon`/smaps show every thread occupy 2 Mbytes AnonHugePages. 
-
+```c
     fee7a06000-fee8205000 rwxp 00000000 00:00 0                              [stack:13630]
     Size:               8188 kB
     Rss:                2068 kB
@@ -38,9 +38,9 @@ From /proc/`pid of charon`/smaps show every thread occupy 2 Mbytes AnonHugePages
     Locked:                0 kB
     VmFlags: mr mw me ac
     ...
-
+```
 ### Investigation:
-Found Transparent Huge Page feature is enabled in system wide.  
+Found **Transparent Huge Page** feature is enabled in system wide.  
 It will cause the system to allocate 2 Mbytes first if possible, but according to the document in LWN, 
 the extra memory will be splitted and reclaimed by the system. There should be no such case. 
 Write a simple test program to simulate the 520 threads malloc 120 bytes, the issue can be easily reproduced. 
@@ -50,7 +50,7 @@ Both on the hzling40, LRC, and own PC.
 ZhouLB gives an explanation, When the THP feature enabled in system wide,  the new created thread malloc 120 bytes,
 the glibc's malloc will map memory according to if the thread address is aligned with 2 Mbytes. 
 If the thread address is aligned to 2Mbytes, it will map 2 Mbytes physical memory, if not aligned, it will map 4 Kbytes.
-
+```c
     ffe3001000-ffe3800000 rwxp 00000000 00:00 0                              [stack:16400] //aligned to 2Mbytes
     Size:               8188 kB
     Rss:                2048 kB
@@ -84,6 +84,7 @@ If the thread address is aligned to 2Mbytes, it will map 2 Mbytes physical memor
     MMUPageSize:           4 kB
     Locked:                0 kB
     VmFlags: rd wr ex mr mw me ac
+```
 
 THP improves the memory management efficiency a lot, there are benchmarks(https://lwn.net/Articles/423590/) 
 showing improvements of up to 10% or so in some situations. 
@@ -104,25 +105,25 @@ libhugetlbfs -> hugetlbfs
 libhugetlbfs 对malloc()/free()等内存相关的函数做了重载。
 
 Need config kernel before support hugetlbfs
-
+```c
     CONFIG_HUGETLB_PAGE
     CONFIG_HUGETLBFS
-
-Show number of huge pages in the system: /proc/sys/vm/nr_hugepages
+```
+Show number of huge pages in the system: `/proc/sys/vm/nr_hugepages`
 
 Can set the number:
-
+```c
     echo 20 > /proc/sys/vm/nr_hugepages
-
+```
 hugetlbfs 只能被mount起来才能使用。 
-
+```c
     mount none /mnt/huge -t hugetlbfs
+```
+### Meaning of VSZ and RSS by `ps aux` command
 
-### Meaning of VSZ and RSS by \`ps aux\` command
+**VSZ:**  virtual memory size of the process in KiB (1024-byte units).
 
-VSZ:  virtual memory size of the process in KiB (1024-byte units).
-
-RSS: resident set size, the non-swapped physical memory that a task has used (in kiloBytes).
+**RSS: resident set size**, the non-swapped physical memory that a task has used (in kiloBytes).
 Address space (ie. virtual memory in the process list) doesn't cost anything; it's not real. 
 What's real is the RSS (RES) column, which is resident memory. 
 That's how much of your actual memory a process is occupying(在内存中驻留的占用内存).
@@ -132,23 +133,22 @@ That's how much of your actual memory a process is occupying(在内存中驻留�
 But even that isn't the whole answer. If a process calls fork(), it splits into two parts, and both of them initially share all their RSS. 
 So even if RSS was initially 1 GB, the result after forking would be two processes, each with an RSS of 1 GB, but you'd still only be using 1 GB of memory.
 
-Confused yet? Here's what you really need to know: use the free command and check the results before and after starting your program (on the +/- buffers/cache line). That difference is how much new memory your newly-started program used.
+Confused yet? Here's what you really need to know: use the `free` command and check the results before and after starting your program (on the +/- buffers/cache line). **That difference is how much new memory your newly-started program used.**
 
 ### Transparent Huge pages
 
 Huge Pages provide service by hugetlbfs, which is a filesystem. If a process want to use huge page, there is no method, so introduce the Transparent Hugepage.
-Hugetlbfs is often seen as a feature for large, proprietary database management systems and little else(主要用于数据库).
-**But to use hugepages effectively, the kernel must find physically continuous areas of memory big enough to satisfy the request, and also properly aligned. **
-For this, a khugepaged kernel thread has been added. This thread will occasionally attempt to substitute smaller pages being used currently with a hugepage allocation, 
+Hugetlbfs is often seen as a feature for **large, proprietary database management systems and little else(主要用于数据库)**.
+**But to use hugepages effectively, the kernel must find physically continuous areas of memory big enough to satisfy the request, and also properly aligned.**
+For this, a `khugepaged kernel thread`has been added. This thread will occasionally attempt to substitute smaller pages being used currently with a hugepage allocation, 
 thus maximizing THP usage.
-
+```shell
     -bash-4.3# cat /sys/kernel/mm/transparent_hugepage/enabled 
     [always] madvise never
     -bash-4.3# cat /sys/kernel/mm/transparent_hugepage/defrag  
     [always] madvise never
     -bash-4.3#
-
-
+```
 always: enable in system wide
 
 madvise: enable only when madvise is called
@@ -156,7 +156,7 @@ madvise: enable only when madvise is called
 int madvise(void *addr, size_t length, int advice); //MADV_HUGEPAGE
 
 Enables Transparent Huge Pages (THP) for pages in the range specified by addr and length. 
-
+```shell
     -bash-4.3# cat /proc/meminfo |grep Anon
     AnonPages:         61936 kB
     AnonHugePages:     30720 kB
@@ -166,19 +166,19 @@ Enables Transparent Huge Pages (THP) for pages in the range specified by addr an
     root       150     2  0  2012 ?        00:00:00 [khugepaged]
     root     14293 14223  0 21:34 pts/1    00:00:00 grep huge
     -bash-4.3# 
-
-#### Show process with AnonHugePages used and their ps output
-
+```
+#### Show process with AnonHugePages used and their `ps` output
+```shell
     grep -e AnonHugePages  /proc/*/smaps | awk  '{ if($2>4) print $0} ' |  awk -F "/"  '{print $0; system("ps -fp " $3)} '
-
+```
 bootargs:
-
+```shell
     transparent_hugepage=madvise
-
+```
 KVM guests can be deployed with huge page memory support in order to improve performance by increasing CPU cache hits against the Transaction Lookaside Buffer (TLB). 
 
 #### Sum all the HugePages used in the system:
-
+```c
     -bash-4.3# grep AnonHugePages /proc/*/smaps | awk '{print $2}' |grep -v "^0" |  awk '{sum += $1;} END {print sum " KB" ;}'
     28672 KB
     -bash-4.3# cat /proc/meminfo |grep Huge
@@ -189,7 +189,7 @@ KVM guests can be deployed with huge page memory support in order to improve per
     HugePages_Surp:        0
     Hugepagesize:       2048 kB
     -bash-4.3# 
-
+```
 ### khugepaged
 Since the Transparent HugePage patch was added to the 2.6.38 Kernel by Andrea Arcangeli. A new thread called khugepaged was introduced which scans for pages that could be merged into a single large page, once the pages have been merged into a single huge page, the smaller pages are removed and freed up.
 If the huge page needs to be swapped to disk, then the single page is automatically split back up into smaller pages and written to disk, so THP basically is awesome. 
@@ -225,6 +225,7 @@ madvise(MADV_HUGEPAGE) on their critical mmapped regions.
 
 I didn’t noticed that there is such procedure or porting guide line for 3rd party code about stack size, 
 but I checked 3rd party code cpssd(from Marvell) which is under LFS maintaining, looks for some threads already changed the stack size to 32KB
+```c
 rc = cpssOsTaskCreate(apTaskName,               /* Task Name      */
 
                                                          100,                        /* Task Priority  */
@@ -236,11 +237,11 @@ rc = cpssOsTaskCreate(apTaskName,               /* Task Name      */
                                                          &apTaskParamsArr[portGroupId],/* Arguments list */
 
                                                          &apTaskId);               /* task ID        */
-
+```
 
 OOM Killer(内核如何知道哪个进程需要被杀死？)
 
-code is in mm/oom_kill.c, The function badness() give a score to each existing
+code is in mm/oom_kill.c, The function `badness()` give a score to each existing
 processes. The one with highest score will be the victim. The criteria are:
 
 
