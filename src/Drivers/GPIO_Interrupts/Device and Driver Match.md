@@ -5,6 +5,7 @@
 
 ### 原理
 内核有device, driver, bus的概念， device由device tree定义，由内核解析device tree时生成， device tree里每个platform级的节点都定义了compatible string，driver里也定义了compatible string, 驱动加载时，会遍历platform bus上的devices做match，match成功则call driver里的probe()函数做初始化。
+如果设备节点被内核识别并创建，在/sys/devices/platform目录下会有对应的设备名，当driver和设备匹配成功，调用probe函数后，在device目录下会有driver文件，这个文件是一个软连接，指向/sys/bus/platform/drivers/目录下的驱动。 
 
 **注意:**
 - platform bus是抽象虚拟的概念，物理上没有这个bus;
