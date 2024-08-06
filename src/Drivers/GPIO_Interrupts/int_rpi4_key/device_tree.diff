@@ -1,0 +1,43 @@
+diff --git a/arch/arm/boot/dts/broadcom/bcm2711-rpi-4-b.dts b/arch/arm/boot/dts/broadcom/bcm2711-rpi-4-b.dts
+index d3a3a1e4d..8af754f54 100644
+--- a/arch/arm/boot/dts/broadcom/bcm2711-rpi-4-b.dts
++++ b/arch/arm/boot/dts/broadcom/bcm2711-rpi-4-b.dts
+@@ -44,6 +44,17 @@ sd_vcc_reg: regulator-sd-vcc {
+ 		enable-active-high;
+ 		gpio = <&expgpio 6 GPIO_ACTIVE_HIGH>;
+ 	};
++
++	int_key {
++		compatible = "arrow,intkey";
++
++		pinctrl-names = "default";
++		pinctrl-0 = <&key_pin>;
++		gpios = <&gpio 25 0>;
++		interrupts = <25 1>; 
++		interrupt-parent = <&gpio>;
++	};
++
+ };
+ 
+ &bt {
+@@ -140,6 +151,12 @@ &gpio {
+ 			  "RGMII_TXD1",		/* 55 */
+ 			  "RGMII_TXD2",
+ 			  "RGMII_TXD3";
++
++	key_pin: key_pin {
++		brcm,pins = <25>;
++		brcm,function = <0>;	
++		brcm,pull = <1>; 	
++	};
+ };
+ 
+ &hdmi0 {
+@@ -431,6 +448,7 @@ audio_pins: audio_pins {
+ 		brcm,function = <4>;
+ 		brcm,pull = <0>;
+ 	};
++
+ };
+ 
+ &led_act {
