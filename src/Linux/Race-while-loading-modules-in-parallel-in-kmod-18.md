@@ -280,7 +280,7 @@ which will trigger 3 modprobe processes start to load kernel module xfrm_user.ko
 Only 1 unique process will load the module, other 2 processes should be blocked.
 **Where the other 2 processes blocked?**
 
-From the kmod-20 code, we can get it get the dependency analysis in the kmod before loading modules, 
+From the kmod-20 code, we can get the dependency analysis in the kmod before loading modules, 
 then load modules one by one according the dependency list by finit_module() system call. 
 
 It call finit_module() systemcall to load kernel modules.

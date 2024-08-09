@@ -305,7 +305,14 @@ junhuawa@raspberrypi:/sys/devices/platform/int_key$ [  380.269808] interrupt rec
 [  386.425062] interrupt received. key: PB_KEY
 
 ```
+### Device and driver match
+![](./int_rpi4_key/image/device_attach.png)
 
+### 能否在同一个GPIO上触发上升沿，下降沿两个不同的中断，打印出不同的信息
+结论是可以2个条件都作为中断触发源，但是只能有一个中断处理程序，因为状态寄存器只有1个位来表示中断有没有发生，而无法识别是哪个条件触发了中断。 
+From the Raspberrypi Soc (BCM2837) specification, both falling and rising edge events can be enabled for a GPIO pin, but there is no way to distinguish between the 2 events from the GPIO event detect status register when the transition is triggered. There is only 1 bit set in the GPIO event detect status register (GPEDSn) when the interrupt happens. 
 
+![](./int_rpi4_key/image/GPREN.png)
+![](./int_rpi4_key/image/GPEDS.png)
 
 
