@@ -67,3 +67,6 @@ bcm2711-gpio
 
 CONFIG_PINCTRL_BCM2712=y
 CONFIG_PINCTRL_BCM2835=y
+
+### Remove a directory with Chinese char directory name
+find . -inum 145837 -exec rm -rf {} \;
