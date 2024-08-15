@@ -8,8 +8,8 @@
 #include <sys/stat.h> 
 #include <sys/select.h>
 
-#define TEST_SYSFS_TRIGGER  "/sys/hello/trigger"
-#define TEST_SYSFS_NOTIFY   "/sys/hello/notify"
+#define TEST_SYSFS_TRIGGER  "/sys/kernel/hello/test_group/trigger"
+#define TEST_SYSFS_NOTIFY   "/sys/kernel/hello/test_group/notify"
 
 int main (void)
 {
