@@ -1,0 +1,7 @@
+menu "Hello World Module"
+
+config HELLO_MODULE 
+      tristate "Inside Menu Name"
+      help
+          This is help/informational content for Hello world module
+endmenu
