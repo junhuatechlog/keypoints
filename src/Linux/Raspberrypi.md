@@ -50,10 +50,12 @@ https://blog.csdn.net/sinat_30545941/article/details/85943787
 ### UART console setup
 
 cmdline.txt:
-console=ttyAMA0,115200 console=ttyAMA0 root=PARTUUID=bb8aae7d-02 rootfstype=ext4 fsck.repair=yes rootwait loglevel=7
+no change: console=ttyAMA0,115200 console=ttyAMA0 root=PARTUUID=bb8aae7d-02 rootfstype=ext4 fsck.repair=yes rootwait loglevel=7
 
 UART-USB converter:
 connect GND, pin 8, pin 10 
+
+remove quiet
 
 config.txt:
 ```python
